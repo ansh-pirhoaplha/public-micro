@@ -1,0 +1,5 @@
+gunicorn
+Flask
+redis
+pymongo
+pydantic
