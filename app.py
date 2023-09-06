@@ -1,10 +1,11 @@
 from flask import Flask, jsonify , request
 from dataservice import *
 from datetime import datetime,timedelta
-from functools import wraps
 from utils import *
+from flask_cors import CORS
 
 app = Flask(__name__)
+cors = CORS(app, resources={r"/view/latest/sensor/data/public/*": {"origins": "*"}})
 
 @app.route('/view/latest/sensor/data/public/', methods=['GET'])
 def get_latest_sensor_log():
@@ -20,7 +21,7 @@ def get_latest_sensor_log():
     if grouped_average :
         group_logs(url_info)
     else :
-        attach_device_logs(url_info)
+        attach_device_logs(response,url_info)
 
     #Attaching outdoor data
     outdoor_device = url_info.get("external_device")
@@ -33,21 +34,22 @@ def get_latest_sensor_log():
     client_info = get_client_info(client_id)
     partner_id = url_info.get("partner_id")
     partner_info = get_partner_info(partner_id)
-    handle_images(client_info,partner_info)
+    response = handle_images(response,client_info,partner_info)
 
     #Appending other keys in response
     response["display_logo"] = url_info.get("display_logo")
-    response["params"] = url_info.get("indoor_params")
+    response["indoor_params"] = url_info.get("indoor_params")
     response["partner_id"] = client_info.get("partner_id")
     response["display_name"] = url_info.get("display_name","Public URL")
     response["display_date_time"] = url_info.get("display_date_time",True)
     response["custom_styles"] = url_info.get("custom_styles",{})
+    response["grouped_avg"] = grouped_average
 
     return jsonify(response)
 
 
 @log_exceptions
-def handle_images(client_info,partner_info):
+def handle_images(response,client_info,partner_info):
     
     background_image = client_info.get("public_background_image")
     if background_image in [None,""] :
@@ -66,6 +68,10 @@ def handle_images(client_info,partner_info):
         response["partner_logo_url"] = DEFAULT_CLIENT
     else :
         response["partner_logo_url"] = CLIENT_BASE + background_image
+
+    response["default_image"] = DEFAULT_BG_IMAGE
+
+    return response
 
 
 @log_exceptions
@@ -99,7 +105,8 @@ def proceed_incident_level(data,threshold_data):
 
 
 @log_exceptions
-def attach_device_logs(url_info):
+def attach_device_logs(response,url_info):
+
     indoor_devices = url_info.get("device_list")
     for device in indoor_devices:
         device_info = get_device_info(device,node_addr=device)
@@ -109,15 +116,18 @@ def attach_device_logs(url_info):
 
         log = get_latest_log(device,node_addr=device)
         if expired :
-            log["message"] = "Device Validity is Expired.Please renew its AMC."
             log["status"] = False
+            log["alert_msg"] = "Device Validity is Expired.Please renew its AMC."
         elif notify :
             log["status"] = True 
             log["alert_msg"] = "Device AMC going to expire.Please renew it."
         else :
             log["status"] = True 
-
+            log["alert_msg"] = None
+            
         response["data_logs"].append(log)
+
+    return response
 
 
 @log_exceptions
